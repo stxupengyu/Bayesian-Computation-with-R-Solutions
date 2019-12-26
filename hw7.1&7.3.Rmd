@@ -1,0 +1,232 @@
+
+7.1
+将7.5节给出的先验用本题给出的先验替代
+a)仿照7.6节给出log posterior
+```{r}
+#a
+rm(list=ls())
+library(LearnBayes)
+data(hearttransplants)
+data <- hearttransplants
+fun <- function(theta, data) {
+  alpha <- exp(theta[1])
+  beta <- exp(theta[2])
+  y <- data[, 2]
+  e <- data[, 1]
+  val <- -94 * lgamma(alpha) + sum(alpha * log(beta) + lgamma(alpha + y) -
+    (alpha + y) * log(beta + e)) - 2*log(alpha + 1) - 2*log(beta + 1) + 
+    + log(alpha) + log(beta)
+  return(val)
+}
+
+```
+用laplace函数找到一个mode
+
+```{r}
+fit <- laplace(fun, c(4, 9), data)
+fit
+```
+
+根据Laplace给出的mode调出一个合理的范围 结果不是很像gauss distrubution
+```{r}
+mycontour(fun, c(0.2, 5, 7, 12), data)
+```
+使用gibbs采样1000个点
+```{r}
+mycontour(fun, c(0.2, 5, 7, 12), data)
+set.seed(123)
+r <- gibbs(fun, start = c(2, 9), 1000, c(0.3, 0.3), data)
+points(r[[1]])
+```
+查看接受率
+```{r}
+r$accept
+```
+
+b)取到1000个alpha、beta
+画出每个医院的死亡率与exposure图
+```{r}
+#b
+alpha <- exp(r[[1]][, 1])
+beta <- exp(r[[1]][, 2])
+plot(log(data[, 1]), data[, 2]/data[, 1], pch = as.character(data[, 2]))
+```
+
+根据1000个alpha、beta的值，产生1000个lam_i的值 求出中间90%的区间
+```{r}
+plot(log(data[, 1]), data[, 2]/data[, 1], pch = as.character(data[, 2]))
+  for (i in 1:94){
+  lami <- rgamma(1000, data[i, 2] + alpha, data[i, 1] + beta)
+  probint <- quantile(lami, probs = c(0.05, 0.95))
+  lines(log(data[i, 1])*c(1, 1), probint)
+}
+
+```
+c)和7.8节的图对比，发现差别不大，说明层级模型的选择对结果影响不大
+
+
+
+7.2
+a)仿照7.5节经过化简给出后验
+```{r}
+rm(list=ls())
+fun <- function(theta, data){
+  y <- data[, 1]
+  sigma <- data[, 2]
+  mu <- theta[1]
+  tau <- exp(theta[2])
+  val <- sum(dnorm(y, mean = mu, sd = (sigma^2 + tau^2)^0.5, log = T)) + 
+         log(tau)
+  return(val)
+}
+
+```
+使用laplace函数估计大致mode
+```{r}
+data <- data.frame(y = c(28, 8, -3, 7, -1, 1, 18, 12),
+                   sigma = c(15, 10, 16, 11, 9, 11, 10, 18))
+library(LearnBayes)
+fit <- laplace(fun, c(2, 3), data)
+fit
+```
+多次调试找到大致范围
+```{r}
+mycontour(fun, c(-20, 40, -7, 4), data)
+```
+
+使用gibbs采样1000个点
+```{r}
+mycontour(fun, c(-20, 40, -7, 4), data)
+set.seed(123)
+r <- gibbs(fun, start = c(10, 2), 1000, c(16, 4), data)
+points(r[[1]])
+```
+接受率
+```{r}
+r$accept
+```
+根据模拟出的1000个mu和tau得到相应的1000个theta_i n=8 
+```{r}
+J <- 8
+y <- data[, 1]
+sigma <- data[, 2]
+probint <- NULL
+for(j in 1:J) {
+  tau <- exp(r[[1]][, 2])
+  mu <- r[[1]][, 1]
+  thetaj <- (y[j]/sigma[j]^2+mu/tau^2)/(1/sigma[j]^2+1/tau^2)
+  Vj <- 1/(1/sigma[j]^2+1/tau^2)
+  probint <- cbind(probint,  rnorm(1000, thetaj, Vj^0.5))
+}
+```
+
+```{r}
+plot(density(probint[,1]),col=1,lwd=1)
+lines(density(probint[,2]),col=2,lwd=2)
+lines(density(probint[,3]),col=3,lwd=3)
+lines(density(probint[,4]),col=4,lwd=4)
+```
+
+
+```{r}
+apply(probint, 2, median)
+plot(apply(probint, 2, median))
+
+```
+
+```{r}
+mean=apply(probint, 2, mean)
+plot(mean)
+```
+
+```{r}
+apply(probint, 2, sd)
+```
+7.3
+a)获取数据 仿照7.5得到后验概率
+```{r}
+library(LearnBayes)
+data(cancermortality)
+y <- cancermortality$y
+n <- cancermortality$n
+
+fun <- function(theta, data){
+  y <- data$y
+  n <- data$n
+  K <- exp(theta[1])
+  eta <- exp(theta[2])/(1+exp(theta[2]))
+  val <-   -2 * log(1+K) +
+               sum(lbeta(K * eta + y, K*(1-eta) + n - y) - 
+               lbeta(K * eta, K * (1-eta))) + theta[1] + 
+               theta[2] + log(1+2*exp(theta[2])) - 2 * log(1+exp(theta[2]))
+  return(val)
+}
+```
+b)找到参数的一个mode
+```{r}
+fit <- laplace(fun, c(0, 0), data = cancermortality)
+fit
+=```
+找到一个区域
+```{r}
+mycontour(fun, c(0, 19, -8, -3), data = cancermortality)
+```
+利用gibbs采样模拟1000次
+```{r}
+mycontour(fun, c(0, 19, -8, -3), data = cancermortality)
+r <- gibbs(fun, fit$mode, 10000, c(4,0.9), cancermortality)
+points(r$par)
+```
+
+```{r}
+r$accept
+```
+
+求出eta和K的1000个值以及其90%区间
+```{r}
+K <- exp(r$par[, 1])
+eta <- exp(r$par[, 2])/(1+exp(r$par[, 2]))
+
+quantile(K, c(0.05, 0.95))
+quantile(eta, c(0.05, 0.95))
+
+```
+c)
+```{r}
+plot(log(n), y/n)
+p <- NULL
+for(j in 1:20) {
+  aj <- K * eta + y[j] 
+  bj <- K * (1 - eta) + n[j] - y[j]
+  rb <- rbeta(10000, aj, bj)
+  p <- cbind(p,rb )
+  probint <- quantile(rb, c(0.05, 0.95))
+  lines(log(n[j]) * c(1, 1), probint)
+}
+
+```
+
+```{r}
+apply(p, 2, quantile, c(0.05, 0.95))
+
+mean(log(K))
+sd(log(K))
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+
+
+
+

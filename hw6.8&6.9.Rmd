@@ -1,0 +1,115 @@
+#6.8a
+使用来自laplace的输出构建一个随机游动大都会链，以从θ的后部进行采样。
+对链进行10,000次迭代，并构建logλA和logλB的密度估计。
+```{r}
+set.seed(123456)
+fun <- function(theta, y){
+  lambda.A <- exp(theta[1])
+  lambda.B <- exp(theta[2])
+  sum(log(0.8*dexp(y, 1/lambda.A) + 
+          0.2 * dexp(y, 1/lambda.B)))
+}
+library(LearnBayes)
+y <- c(9.3, 4.9, 3.5, 26, 0.6, 1, 3.5, 26.9, 
+       2.6, 20.4, 1, 10, 1.7, 11.3, 7.7, 14.1, 
+       24.8, 3.8, 8.4, 1.1, 24.5, 90.7, 16.4, 
+       30.7, 8.5, 5.9, 14.7, 0.5, 99.5, 35.2)
+mycontour(fun, c(1, 4, -2, 8), y)
+
+
+fit <- laplace(fun, c(3, 0), y)
+proposal <- list(var = fit$var, scale = 2)
+r <- rwmetrop(fun, proposal, start = fit$mode, m = 10000, y)
+r[[2]]
+points(r[[1]])
+```
+
+
+
+```{r}
+library(coda)
+library(lattice)
+dimnames(r$par)[[2]] <- c('loglambdaA', 'loglambdaB')
+xyplot(mcmc(r$par))
+autocorr.plot(mcmc(r$par), auto.layout = F)
+plot(density(r$par[, 1]), lwd = 2, xlab = 'log lambda A')
+plot(density(r$par[, 2]), lwd = 2, xlab = 'log lambda B')
+```
+使用功能gibbs在Gibbs采样器中构造一个Metropolis。
+还要对链进行10,000次迭代，并构造logλA和logλB的密度估计。
+通过查看诊断图和接受率，比较两个采样器在估计logλA和logλB时的效率和准确性。
+```{r}
+#b
+
+rgibbs <- gibbs(fun, start = fit$mode, 10000, c(0.43, 1.73), y)
+mycontour(fun, c(1, 4, -2, 8), y)
+points(rgibbs$par)
+dimnames(rgibbs$par)[[2]] <- c('loglambdaA', 'loglambdaB')
+xyplot(mcmc(rgibbs$par))
+autocorr.plot(mcmc(rgibbs$par), auto.layout = F)
+rgibbs$accept
+plot(density(rgibbs$par[, 1]), lwd = 2, xlab = 'log lambda A')
+plot(density(rgibbs$par[, 2]), lwd = 2, xlab = 'log lambda B')
+```
+
+```{r}
+par(mfrow = c(2, 2))
+plot(density(r$par[, 1]), lwd = 2, xlab = 'log lambda A', main = '')
+plot(density(r$par[, 2]), lwd = 2, xlab = 'log lambda B', main = '')
+plot(density(rgibbs$par[, 1]), lwd = 2, xlab = 'log lambda A', main = '')
+plot(density(rgibbs$par[, 2]), lwd = 2, xlab = 'log lambda B', main = '')
+
+batchSE(mcmc(r$par), 30)
+batchSE(mcmc(rgibbs$par), 30)
+```
+#6.9a
+使用拉普拉斯对θ的位置和方差-协方差矩阵进行初始猜测，然后使用rwmetrop构造具有10,000次迭代的随机游走链。
+```{r}
+library(LearnBayes)
+fun <- function(theta, y){
+  mu <- theta[1]
+  sigma.y <- exp(theta[2])
+  sigma.b <- exp(theta[3])
+  Y <- apply(y, 1,  mean)
+  n <- dim(y)[2]
+  S <- apply(y, 1, var) * (n-1)
+  loglike <- sum(dnorm(Y, mu, sqrt(sigma.y^2/n +sigma.b^2), log = T)+
+             dgamma(S, shape = (n-1)/2, rate = 1/(2*sigma.y^2), log = T))
+  return(loglike + theta[2] + theta[3])
+}
+y <- c(1545, 1440, 1440, 1520, 1580, 
+       1540, 1555, 1490, 1560, 1495, 
+       1595, 1550, 1605, 1510, 1560, 
+       1445, 1440, 1595, 1465, 1545, 
+       1595, 1630, 1515, 1635, 1625, 
+       1520, 1455, 1450, 1480, 1445)
+y <- matrix(y, nrow = 6, ncol = 5, byrow = T)
+fit <- laplace(fun, c(1500, 3, 3), y)
+laplace(fun, c(1500, 1, 1), y)
+laplace(fun, c(1500, 10, 10), y)
+
+```
+
+```{r}
+
+proposal <- list(var = fit$var, scale = 2)
+r <- rwmetrop(fun, proposal, start = fit$mode, m = 10000, y)
+dimnames(r$par)[[2]] <- c('mu', 'logsigmay', 'logsigmab')
+xyplot(mcmc(r$par))
+r$accept
+batchSE(mcmc(r$par))
+
+```
+使用laplace的输出，使用功能gibbs构建“吉布斯内的都市”抽样算法。
+比较部分（b）和（c）中两种算法的性能，包括接受率，均值和标准偏差分量σy和σb的标准偏差。
+```{r}
+
+rgibbs <- gibbs(fun, start = fit$mode, m = 10000, 2*diag(1.8*fit$var^0.5), y)
+dimnames(rgibbs$par)[[2]] <- c('mu', 'logsigmay', 'logsigmab')
+xyplot(mcmc(rgibbs$par))
+rgibbs$accept
+batchSE(mcmc(rgibbs$par))
+```
+
+
+
